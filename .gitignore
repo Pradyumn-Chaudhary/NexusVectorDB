@@ -1,0 +1,28 @@
+# Environment variables
+.env
+.env.example
+
+# Compiled Java class files
+*.class
+
+# Compiled binaries
+*.exe
+*.o
+*.out
+a.out
+
+# Build directories
+build/
+bin/
+
+# Database files
+vector_db.jsonl
+
+# IDE files
+.vscode/
+.idea/
+*.user
+
+# OS files
+.DS_Store
+Thumbs.db
