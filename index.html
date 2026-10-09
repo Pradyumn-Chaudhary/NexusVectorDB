@@ -266,7 +266,12 @@ button {
           <input type="text" id="docTitle" placeholder="Document title / topic…" />
           <input type="text" id="docCategory" placeholder="Category (optional, e.g. cs, math, food, sports)…" />
           <textarea id="docText" placeholder="Paste your notes, textbook excerpt, lecture content…&#10;&#10;Long text is automatically split into overlapping chunks and each chunk gets its own real embedding via Ollama's nomic-embed-text model."></textarea>
-          <button class="btn-g" id="insertDocBtn" onclick="insertDocument()">⚡ EMBED &amp; INSERT</button>
+          <div style="display:flex;gap:8px">
+            <input type="file" id="fileInput" style="display:none" accept=".txt,.md,.csv,text/*" onchange="handleFileUpload(event)">
+            <button class="btn-s" onclick="document.getElementById('fileInput').click()" style="flex:1">📁 UPLOAD FILE</button>
+            <button class="btn-g" id="insertDocBtn" onclick="insertDocument()" style="flex:2">⚡ EMBED &amp; INSERT</button>
+          </div>
+          <div style="font-size:10px;color:var(--muted)">Note: Only text files (.txt, .md, .csv) are allowed. Binary files will be rejected.</div>
           <div id="insertStatus" style="font-size:11px;color:var(--muted)"></div>
         </div>
       </div>
@@ -605,6 +610,43 @@ async function loadHNSW() {
 // ════════════════════════════════════════════════════════════
 //  DOCUMENT MANAGEMENT
 // ════════════════════════════════════════════════════════════
+
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const validExtensions = ['.txt', '.md', '.csv'];
+  const isTextType = file.type.startsWith('text/');
+  const isTextExtension = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+
+  if (!isTextType && !isTextExtension && file.type !== '') {
+    document.getElementById('insertStatus').innerHTML = '<span style="color:var(--red)">✗ Error: Please upload a text file (.txt, .md, .csv).</span>';
+    e.target.value = ''; 
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const text = evt.target.result;
+    
+    // Check for null bytes or control characters to reject binary
+    if (/[\x00-\x08\x0E-\x1F]/.test(text)) {
+      document.getElementById('insertStatus').innerHTML = '<span style="color:var(--red)">✗ Error: The file appears to be binary. Only text files are allowed.</span>';
+      return;
+    }
+
+    document.getElementById('docText').value = text;
+    if (!document.getElementById('docTitle').value) {
+      document.getElementById('docTitle').value = file.name;
+    }
+    document.getElementById('insertStatus').innerHTML = '<span style="color:var(--text)">File loaded. Click EMBED & INSERT to process.</span>';
+  };
+  reader.onerror = () => {
+    document.getElementById('insertStatus').innerHTML = '<span style="color:var(--red)">✗ Error reading file. Is it a text file?</span>';
+  };
+  reader.readAsText(file);
+  e.target.value = ''; // Reset input
+}
 
 async function insertDocument() {
   const title=document.getElementById('docTitle').value.trim();

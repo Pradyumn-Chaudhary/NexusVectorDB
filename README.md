@@ -152,7 +152,7 @@ Embed any real-world text into the database using the Gemini API.
 
 1. Enter a title (e.g., `Operating Systems Notes`)
 2. Optionally set a category (e.g., `cs`, `math`, `food`, `sports`)
-3. Paste any text — lecture notes, articles, documentation
+3. **Paste any text** — lecture notes, articles, documentation — **or upload a text file** (`.txt`, `.md`, `.csv`). Binary files will be rejected.
 4. Click **⚡ EMBED & INSERT**
 
 Long documents are automatically chunked into overlapping 250-word segments, each with its own embedding. Stored documents are listed below with a preview and word count.
