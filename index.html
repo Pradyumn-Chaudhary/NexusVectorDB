@@ -226,7 +226,7 @@ button {
   <div class="right-panel">
     <div class="tabs">
       <div class="tab on"  onclick="switchTab('search')">SEARCH</div>
-      <div class="tab"     onclick="switchTab('docs')">DOCUMENTS</div>
+      <div class="tab"     onclick="switchTab('docs')">KNOWLEDGE BASE</div>
       <div class="tab"     onclick="switchTab('rag')">ASK AI</div>
     </div>
 
@@ -257,7 +257,7 @@ button {
       </div>
     </div>
 
-    <!-- TAB: DOCUMENTS -->
+    <!-- TAB: KNOWLEDGE BASE -->
     <div class="tab-content" id="tab-docs">
 
       <div>
@@ -276,7 +276,10 @@ button {
         </div>
       </div>
       <div>
-        <div class="sec">Stored Documents (<span id="docCountLabel">0</span>)</div>
+        <div class="sec" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Stored Documents (<span id="docCountLabel">0</span>)</span>
+          <button class="btn-s" style="width:auto; padding: 4px 10px; font-size: 11px; color: var(--red); border-color: rgba(248,81,73,0.3);" onclick="clearKnowledgeBase()">🗑️ WIPE KNOWLEDGE BASE</button>
+        </div>
         <div class="doc-list" id="docList">
           <div style="color:var(--muted);font-size:11px">No documents yet. Insert some above.</div>
         </div>
@@ -495,6 +498,8 @@ async function loadItems() {
       for (const p of pcaPoints){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);}
       const px=(x1-x0)*.18||.1,py=(y1-y0)*.18||.1;
       bounds={minX:x0-px,maxX:x1+px,minY:y0-py,maxY:y1+py};
+    } else {
+      pcaPoints = [];
     }
     document.getElementById('statsLabel').textContent=allItems.length+' vectors · '+DIMS+' dims';
   } catch(_) {}
@@ -703,8 +708,9 @@ async function loadDocList() {
           <span class="dcard-words">${d.words} words</span>
           <div style="display:flex;gap:8px;align-items:center;">
             <label style="font-size:11px;color:var(--text);display:flex;align-items:center;gap:4px;cursor:pointer;">
-              <input type="checkbox" ${d.active?'checked':''} onchange="toggleDoc(${d.id})"> Use in AI
+              <input type="checkbox" ${d.active?'checked':''} onchange="toggleDoc('${d.id}')"> Use in AI
             </label>
+            <button class="del" onclick="deleteDoc('${d.id}')" title="Delete Document" style="font-size:14px;">🗑️</button>
           </div>
         </div>
       </div>`).join('');
@@ -715,6 +721,24 @@ async function toggleDoc(id) {
   try {
     await fetch(`${API}/doc/toggle/${id}`,{method:'POST'});
     loadDocList();
+  } catch(_) {}
+}
+
+async function deleteDoc(id) {
+  if (!confirm("Delete this document chunk?")) return;
+  try {
+    await fetch(`${API}/doc/delete/${id}`,{method:'POST'});
+    loadDocList();
+    loadItems().then(loadHNSW);
+  } catch(_) {}
+}
+
+async function clearKnowledgeBase() {
+  if (!confirm("Are you sure you want to COMPLETELY WIPE the knowledge base? This deletes ALL embeddings and documents forever.")) return;
+  try {
+    await fetch(`${API}/doc/clear`, {method:'POST'});
+    loadDocList();
+    loadItems().then(loadHNSW);
   } catch(_) {}
 }
 

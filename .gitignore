@@ -17,6 +17,8 @@ bin/
 
 # Database files
 vector_db.jsonl
+demo_vectors.jsonl
+rag_docs.jsonl
 
 # IDE files
 .vscode/

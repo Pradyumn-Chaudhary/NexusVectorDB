@@ -448,8 +448,29 @@ public class Main {
             bf.remove(id);
             hnsw.remove(id);
             kdt.rebuild(new ArrayList<>(store.values()));
-            TxLog.append("V", "D", id, null, null, null);
             return true;
+        }
+
+        synchronized boolean removeByMetadata(String meta) {
+            List<Integer> toRemove = new ArrayList<>();
+            for (VectorItem v : store.values()) {
+                if (v.metadata != null && (v.metadata.equals(meta) || meta.startsWith(v.metadata))) {
+                    toRemove.add(v.id);
+                }
+            }
+            boolean removedAny = false;
+            for (int id : toRemove) {
+                if (remove(id)) removedAny = true;
+            }
+            return removedAny;
+        }
+
+        synchronized void clear() {
+            store.clear();
+            bf = new BruteForce();
+            kdt = new KDTree(dims);
+            hnsw = new HNSW(16, 200);
+            nextId = 1;
         }
 
         static class Hit {
@@ -691,13 +712,15 @@ public class Main {
     // PERSISTENCE (TX LOG)
     // =====================================================================
     static class TxLog {
-        static final String FILE = "vector_db.jsonl";
+        static final String FILE_V = "demo_vectors.jsonl";
+        static final String FILE_D = "rag_docs.jsonl";
         static boolean isReplaying = false;
 
         static synchronized void append(String type, String action, int id, String s1, String s2, float[] emb) {
             if (isReplaying)
                 return;
-            try (FileWriter fw = new FileWriter(FILE, true)) {
+            String file = type.equals("V") ? FILE_V : FILE_D;
+            try (FileWriter fw = new FileWriter(file, true)) {
                 StringBuilder sb = new StringBuilder();
                 sb.append("{\"type\":\"").append(type).append("\",\"action\":\"").append(action).append("\",\"id\":")
                         .append(id);
@@ -713,11 +736,68 @@ public class Main {
             }
         }
 
+        static synchronized void clear() {
+            try {
+                new FileWriter(FILE_V, false).close();
+                new FileWriter(FILE_D, false).close();
+            } catch (Exception e) {}
+        }
+
+        static synchronized void compact(VectorDB db, DocumentDB docDB) {
+            if (isReplaying) return;
+            try (FileWriter fw = new FileWriter(FILE_V, false)) {
+                for (VectorItem v : db.store.values()) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("{\"type\":\"V\",\"action\":\"I\",\"id\":").append(v.id);
+                    if (v.metadata != null) sb.append(",\"metadata\":").append(jS(v.metadata));
+                    if (v.category != null) sb.append(",\"category\":").append(jS(v.category));
+                    sb.append(",\"embedding\":").append(jVec(v.emb)).append("}\n");
+                    fw.write(sb.toString());
+                }
+            } catch (Exception e) {}
+            try (FileWriter fw = new FileWriter(FILE_D, false)) {
+                for (DocItem d : docDB.store.values()) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("{\"type\":\"D\",\"action\":\"I\",\"id\":").append(d.id);
+                    if (d.title != null) sb.append(",\"metadata\":").append(jS(d.title));
+                    if (d.text != null) sb.append(",\"category\":").append(jS(d.text));
+                    sb.append(",\"embedding\":").append(jVec(d.emb)).append("}\n");
+                    fw.write(sb.toString());
+                    if (!d.active) {
+                        fw.write("{\"type\":\"D\",\"action\":\"T\",\"id\":" + d.id + "}\n");
+                    }
+                }
+            } catch (Exception e) {}
+        }
+
         static void replay(VectorDB db, DocumentDB docDB) {
-            File f = new File(FILE);
+            isReplaying = true;
+            File legacy = new File("vector_db.jsonl");
+            if (legacy.exists()) {
+                replayFile(legacy, db, docDB);
+                legacy.delete();
+            } else {
+                replayFile(new File(FILE_V), db, docDB);
+                replayFile(new File(FILE_D), db, docDB);
+            }
+            
+            // Rebuild indices
+            db.kdt.rebuild(new ArrayList<>(db.store.values()));
+            for (VectorItem v : db.store.values()) {
+                db.bf.insert(v);
+                db.hnsw.insert(v, Main::cosine);
+            }
+            for (DocItem d : docDB.store.values()) {
+                VectorItem vi = new VectorItem(d.id, d.title, "doc", d.emb);
+                docDB.bf.insert(vi);
+                docDB.hnsw.insert(vi, Main::cosine);
+            }
+            isReplaying = false;
+        }
+
+        static void replayFile(File f, VectorDB db, DocumentDB docDB) {
             if (!f.exists())
                 return;
-            isReplaying = true;
             try {
                 for (String line : Files.readAllLines(f.toPath())) {
                     if (line.trim().isEmpty())
@@ -755,20 +835,8 @@ public class Main {
                         }
                     }
                 }
-                for (VectorItem v : db.store.values()) {
-                    db.bf.insert(v);
-                    db.kdt.insert(v);
-                    db.hnsw.insert(v, Main::cosine);
-                }
-                for (DocItem d : docDB.store.values()) {
-                    VectorItem vi = new VectorItem(d.id, d.title, "doc", d.emb);
-                    docDB.hnsw.insert(vi, Main::cosine);
-                    docDB.bf.insert(vi);
-                }
             } catch (Exception e) {
                 e.printStackTrace();
-            } finally {
-                isReplaying = false;
             }
         }
     }
@@ -1004,7 +1072,6 @@ public class Main {
                 return false;
             DocItem d = store.get(id);
             d.active = !d.active;
-            TxLog.append("D", "T", id, null, null, null);
             return d.active;
         }
 
@@ -1014,8 +1081,15 @@ public class Main {
             store.remove(id);
             hnsw.remove(id);
             bf.remove(id);
-            TxLog.append("D", "D", id, null, null, null);
             return true;
+        }
+
+        synchronized void clear() {
+            store.clear();
+            hnsw = new HNSW(16, 200);
+            bf = new BruteForce();
+            nextId = 1;
+            dims = 0;
         }
 
         synchronized List<DocItem> all() {
@@ -1069,6 +1143,7 @@ public class Main {
         DocumentDB docDB = new DocumentDB();
         CloudClient cloud = new CloudClient();
         TxLog.replay(db, docDB);
+        TxLog.compact(db, docDB);
 
         boolean cloudUp = cloud.isAvailable();
         System.out.println("=== VectorDB Engine ===");
@@ -1243,23 +1318,72 @@ public class Main {
                     sendJson(t, 200, ss.toString());
 
                 } else if (path.startsWith("/doc/toggle/")) {
-                    int id = Integer.parseInt(path.substring("/doc/toggle/".length()));
-                    boolean st = docDB.toggle(id);
+                    String[] ids = path.substring("/doc/toggle/".length()).split(",");
+                    boolean st = false;
+                    for (String idStr : ids) {
+                        st = docDB.toggle(Integer.parseInt(idStr));
+                    }
+                    TxLog.compact(db, docDB);
                     sendJson(t, 200, "{\"active\":" + st + "}");
+
+                } else if (path.startsWith("/doc/delete/")) {
+                    String[] ids = path.substring("/doc/delete/".length()).split(",");
+                    boolean st = false;
+                    for (String idStr : ids) {
+                        int id = Integer.parseInt(idStr);
+                        DocItem doc = docDB.store.get(id);
+                        if (doc != null) {
+                            String title = doc.title;
+                            if (title.contains(" [")) {
+                                title = title.substring(0, title.lastIndexOf(" ["));
+                            }
+                            db.removeByMetadata(title);
+                            st = docDB.remove(id);
+                        }
+                    }
+                    TxLog.compact(db, docDB);
+                    sendJson(t, 200, "{\"success\":" + st + "}");
+
+                } else if (path.equals("/doc/clear")) {
+                    TxLog.clear();
+                    db.clear();
+                    docDB.clear();
+                    sendJson(t, 200, "{\"success\":true}");
 
                 } else if (path.equals("/doc/list")) {
                     List<DocItem> docs = docDB.all();
+                    Map<String, List<DocItem>> grouped = new LinkedHashMap<>();
+                    for (DocItem d : docs) {
+                        String title = d.title;
+                        if (title.contains(" [")) {
+                            title = title.substring(0, title.lastIndexOf(" ["));
+                        }
+                        grouped.computeIfAbsent(title, k -> new ArrayList<>()).add(d);
+                    }
                     StringBuilder ss = new StringBuilder("[");
-                    for (int i = 0; i < docs.size(); i++) {
-                        if (i > 0)
-                            ss.append(",");
-                        String preview = docs.get(i).text.substring(0, Math.min(docs.get(i).text.length(), 120));
-                        if (docs.get(i).text.length() > 120)
-                            preview += "…";
-                        int words = docs.get(i).text.split("\\s+").length;
-                        ss.append("{\"id\":").append(docs.get(i).id).append(",\"title\":").append(jS(docs.get(i).title))
+                    boolean first = true;
+                    for (Map.Entry<String, List<DocItem>> entry : grouped.entrySet()) {
+                        if (!first) ss.append(",");
+                        first = false;
+                        String title = entry.getKey();
+                        List<DocItem> chunks = entry.getValue();
+                        StringBuilder fullText = new StringBuilder();
+                        boolean allActive = true;
+                        StringBuilder ids = new StringBuilder();
+                        for (int j = 0; j < chunks.size(); j++) {
+                            DocItem c = chunks.get(j);
+                            fullText.append(c.text).append(" ");
+                            if (!c.active) allActive = false;
+                            if (j > 0) ids.append(",");
+                            ids.append(c.id);
+                        }
+                        String textPreview = fullText.toString();
+                        String preview = textPreview.substring(0, Math.min(textPreview.length(), 120));
+                        if (textPreview.length() > 120) preview += "…";
+                        int words = textPreview.split("\\s+").length;
+                        ss.append("{\"id\":").append(jS(ids.toString())).append(",\"title\":").append(jS(title))
                                 .append(",\"preview\":").append(jS(preview)).append(",\"words\":").append(words)
-                                .append(",\"active\":").append(docs.get(i).active).append("}");
+                                .append(",\"active\":").append(allActive).append("}");
                     }
                     ss.append("]");
                     sendJson(t, 200, ss.toString());

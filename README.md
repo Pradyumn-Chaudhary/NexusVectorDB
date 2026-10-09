@@ -198,7 +198,8 @@ Base URL: `http://localhost:8080`
 |---|---|---|---|
 | `POST` | `/doc/insert` | `{"title":"...","text":"..."}` | Embed and store a document |
 | `GET` | `/doc/list` | — | List all stored documents |
-| `DELETE` | `/doc/delete/:id` | — | Delete a document chunk |
+| `POST` | `/doc/delete/:id` | — | Delete a document chunk |
+| `POST` | `/doc/clear` | — | Wipe all documents and embeddings |
 | `POST` | `/doc/ask` | `{"question":"...","k":3}` | RAG: retrieve context + generate answer |
 
 ### Example: Search via curl
@@ -223,10 +224,11 @@ curl -X POST http://localhost:8080/doc/ask `
 
 ```
 VectorDB/
-├── Main.java        ← Java backend (HNSW, KD-Tree, BruteForce, REST API, RAG)
-├── index.html       ← Frontend (PCA scatter plot, chat UI, benchmark)
-├── vector_db.jsonl  ← Persistent storage (Append-only Write-Ahead Log)
-└── assets/          ← Screenshots
+├── Main.java           ← Java backend (HNSW, KD-Tree, BruteForce, REST API, RAG)
+├── index.html          ← Frontend (PCA scatter plot, chat UI, benchmark)
+├── demo_vectors.jsonl  ← Persistent storage (Visual scatter plot dots)
+├── rag_docs.jsonl      ← Persistent storage (RAG knowledge base chunks)
+└── assets/             ← Screenshots
 ```
 
 ### Architecture (Main.java)
